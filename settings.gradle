@@ -1,0 +1,11 @@
+pluginManagement {
+	repositories {
+		maven { name = 'Fabric'; url = 'https://maven.fabricmc.net/' }
+		maven { name = 'MinecraftForge'; url = 'https://maven.minecraftforge.net/' }
+		maven { name = 'Sponge'; url = 'https://repo.spongepowered.org/repository/maven-public/' }
+		mavenCentral()
+		gradlePluginPortal()
+	}
+}
+rootProject.name = 'rickregen'
+include 'fabric', 'forge'

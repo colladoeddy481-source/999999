@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "package": "com.example.rickregen.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "client": [
+    "AbstractClientPlayerMixin",
+    "PlayerModelMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
