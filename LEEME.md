@@ -17,3 +17,15 @@ Obtener los .jar sin instalar nada (GitHub Actions):
  3. Abajo, en "Artifacts", descarga "jars": dentro estan el jar de forge y el de fabric.
  4. Pon en tu carpeta mods el jar de tu loader.
 Si falla, abre el paso que fallo y copia el error.
+
+
+## Rickregen 0.2.0 - animaciones de Rick Prime
+
+Esta version agrega animaciones al modelo vanilla del jugador cuando el estado Rick Prime esta activo:
+- Idle: respiracion sutil y movimiento de cabeza.
+- Caminar: balanceo adicional de brazos y torso.
+- Correr: inclinacion hacia delante.
+- Salto/caida: pose de equilibrio.
+- Ataque: giro corto del torso sincronizado con el ataque vanilla.
+
+La animacion de regeneracion original se conserva. Estas animaciones son ajustes del modelo de jugador; no agregan un modelo 3D independiente ni animaciones cinematograficas personalizadas.

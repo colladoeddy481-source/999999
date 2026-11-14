@@ -10,52 +10,99 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Animacion de regeneracion en tres fases:
- *  - 0%..15%: los brazos suben y la cabeza se echa hacia atras (suave)
- *  - 15%..85%: pose abierta con un temblor que va en aumento
- *  - 85%..100%: los brazos vuelven a su sitio
+ * Animaciones de Rick Prime para el modelo vanilla del jugador.
+ * Se aplican solo cuando el jugador ya se transformo en Rick Prime.
  */
 @Mixin(PlayerModel.class)
 public abstract class PlayerModelMixin {
-	private static float rickregen$smooth(float t) {
-		t = Mth.clamp(t, 0.0F, 1.0F);
-		return t * t * (3.0F - 2.0F * t);
-	}
+    private static float rickregen$smooth(float t) {
+        t = Mth.clamp(t, 0.0F, 1.0F);
+        return t * t * (3.0F - 2.0F * t);
+    }
 
-	@Inject(method = "setupAnim(Lnet/minecraft/world/entity/LivingEntity;FFFFF)V", at = @At("TAIL"))
-	private void rickregen$pose(LivingEntity entity, float limbSwing, float limbSwingAmount,
-								float ageInTicks, float netHeadYaw, float headPitch, CallbackInfo ci) {
-		float p = ClientRegenData.progress(entity.getUUID());
-		if (p < 0.0F) return;
+    @Inject(method = "setupAnim(Lnet/minecraft/world/entity/LivingEntity;FFFFF)V", at = @At("TAIL"))
+    private void rickregen$animate(LivingEntity entity, float limbSwing, float limbSwingAmount,
+                                   float ageInTicks, float netHeadYaw, float headPitch, CallbackInfo ci) {
+        PlayerModel<?> model = (PlayerModel<?>) (Object) this;
 
-		// 0 = pose normal, 1 = pose completamente abierta
-		float open = rickregen$smooth(p / 0.15F) * (1.0F - rickregen$smooth((p - 0.85F) / 0.15F));
-		if (open <= 0.0F) return;
+        // Conserva la animacion de transformacion que ya tenia el mod.
+        float regen = ClientRegenData.progress(entity.getUUID());
+        if (regen >= 0.0F) {
+            float open = rickregen$smooth(regen / 0.15F)
+                    * (1.0F - rickregen$smooth((regen - 0.85F) / 0.15F));
+            if (open > 0.0F) {
+                float shakeAmp = (0.02F + 0.10F * regen) * open;
+                float shake = Mth.sin(ageInTicks * 1.9F) * shakeAmp;
+                float shake2 = Mth.sin(ageInTicks * 2.7F + 1.3F) * shakeAmp;
+                float armOpen = (float) (Math.PI / 2.0) + 0.12F;
 
-		// El temblor crece con el tiempo
-		float shakeAmp = (0.02F + 0.10F * p) * open;
-		float shake = Mth.sin(ageInTicks * 1.9F) * shakeAmp;
-		float shake2 = Mth.sin(ageInTicks * 2.7F + 1.3F) * shakeAmp;
-		float armOpen = (float) (Math.PI / 2.0) + 0.12F;
+                model.rightArm.xRot = Mth.lerp(open, model.rightArm.xRot, -0.15F + shake2);
+                model.rightArm.yRot = Mth.lerp(open, model.rightArm.yRot, 0.0F);
+                model.rightArm.zRot = Mth.lerp(open, model.rightArm.zRot, armOpen + shake);
+                model.leftArm.xRot = Mth.lerp(open, model.leftArm.xRot, -0.15F - shake2);
+                model.leftArm.yRot = Mth.lerp(open, model.leftArm.yRot, 0.0F);
+                model.leftArm.zRot = Mth.lerp(open, model.leftArm.zRot, -armOpen - shake);
+                model.head.xRot = Mth.lerp(open, model.head.xRot, -0.75F + shake2);
+                model.head.zRot = Mth.lerp(open, model.head.zRot, shake);
+                model.body.xRot = Mth.lerp(open, model.body.xRot, -0.12F);
 
-		PlayerModel<?> m = (PlayerModel<?>) (Object) this;
+                model.hat.copyFrom(model.head);
+                model.jacket.copyFrom(model.body);
+                model.leftSleeve.copyFrom(model.leftArm);
+                model.rightSleeve.copyFrom(model.rightArm);
+            }
+            return;
+        }
 
-		m.rightArm.xRot = Mth.lerp(open, m.rightArm.xRot, -0.15F + shake2);
-		m.rightArm.yRot = Mth.lerp(open, m.rightArm.yRot, 0.0F);
-		m.rightArm.zRot = Mth.lerp(open, m.rightArm.zRot, armOpen + shake);
+        // Las animaciones especiales solo se ejecutan tras convertirse en Rick Prime.
+        if (!ClientRegenData.isRickPrime(entity.getUUID())) return;
 
-		m.leftArm.xRot = Mth.lerp(open, m.leftArm.xRot, -0.15F - shake2);
-		m.leftArm.yRot = Mth.lerp(open, m.leftArm.yRot, 0.0F);
-		m.leftArm.zRot = Mth.lerp(open, m.leftArm.zRot, -armOpen - shake);
+        float movement = Mth.clamp(limbSwingAmount, 0.0F, 1.0F);
+        float idle = 1.0F - movement;
+        float time = ageInTicks;
 
-		// Cabeza hacia atras y cuerpo ligeramente arqueado
-		m.head.xRot = Mth.lerp(open, m.head.xRot, -0.75F + shake2);
-		m.head.zRot = Mth.lerp(open, m.head.zRot, shake);
-		m.body.xRot = Mth.lerp(open, m.body.xRot, -0.12F);
+        // Idle: respiracion tranquila, cabeza ladeada y postura confiada.
+        model.body.xRot += Mth.sin(time * 0.08F) * 0.018F * idle;
+        model.head.zRot += Mth.sin(time * 0.055F) * 0.025F * idle;
+        model.head.xRot += Mth.sin(time * 0.075F) * 0.012F * idle;
+        model.rightArm.zRot += 0.035F * idle;
+        model.leftArm.zRot -= 0.025F * idle;
 
-		m.hat.copyFrom(m.head);
-		m.jacket.copyFrom(m.body);
-		m.leftSleeve.copyFrom(m.leftArm);
-		m.rightSleeve.copyFrom(m.rightArm);
-	}
+        // Caminar: balanceo ligeramente mas marcado y hombros con peso.
+        float walk = Mth.cos(limbSwing * 0.6662F) * movement;
+        model.rightArm.xRot += walk * 0.12F;
+        model.leftArm.xRot -= walk * 0.12F;
+        model.body.yRot += Mth.sin(limbSwing * 0.5F) * 0.035F * movement;
+
+        // Correr: Rick inclina el torso hacia delante.
+        if (entity.isSprinting()) {
+            model.body.xRot -= 0.12F * movement;
+            model.head.xRot -= 0.035F * movement;
+            model.rightArm.xRot -= 0.10F * movement;
+            model.leftArm.xRot -= 0.10F * movement;
+        }
+
+        // Salto/caida: ligera pose de equilibrio en el aire.
+        if (!entity.onGround()) {
+            float air = Mth.clamp((float) Math.abs(entity.getDeltaMovement().y) * 1.5F, 0.0F, 1.0F);
+            model.body.xRot -= 0.045F * air;
+            model.rightArm.zRot += 0.08F * air;
+            model.leftArm.zRot -= 0.08F * air;
+        }
+
+        // Golpe: giro corto del torso sincronizado con el swing vanilla.
+        float attack = entity.getAttackAnim(0.0F);
+        if (attack > 0.0F) {
+            float punch = Mth.sin(attack * (float) Math.PI);
+            model.body.yRot += punch * 0.28F;
+            model.head.yRot += punch * -0.10F;
+        }
+
+        model.hat.copyFrom(model.head);
+        model.jacket.copyFrom(model.body);
+        model.leftSleeve.copyFrom(model.leftArm);
+        model.rightSleeve.copyFrom(model.rightArm);
+        model.leftPants.copyFrom(model.leftLeg);
+        model.rightPants.copyFrom(model.rightLeg);
+    }
 }
