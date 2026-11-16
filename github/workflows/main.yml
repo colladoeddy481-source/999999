@@ -20,10 +20,10 @@ jobs:
         with:
           gradle-version: 8.8
 
-      - name: Compilar Forge y Fabric
+      - name: Build Mod
         run: gradle build
 
-      - name: Subir los jars
+      - name: Upload JARs
         uses: actions/upload-artifact@v4
         with:
           name: jars
