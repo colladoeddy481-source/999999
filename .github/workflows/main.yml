@@ -25,12 +25,13 @@ jobs:
 
       - name: Compilar Fabric
         continue-on-error: true
-        run: gradle :fabric:build
-
+        run: gradle :fabric:build 
+      
       - name: Upload built JARs
   uses: actions/upload-artifact@v4
   with:
     name: rickregen-jars
-    path: build/libs/*.jar
-            forge/build/libs/*.jar
-            fabric/build/libs/*.jar
+    path: |
+      forge/build/libs/*.jar
+      fabric/build/libs/*.jar
+      build/libs/*.jar
