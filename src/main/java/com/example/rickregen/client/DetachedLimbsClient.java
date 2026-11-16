@@ -6,8 +6,6 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import net.minecraft.client.model.PlayerModel;
-import net.minecraft.core.BlockPos;
-import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.model.geom.PartPose;
 import net.minecraft.client.model.geom.builders.CubeListBuilder;
@@ -17,9 +15,14 @@ import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.client.event.RenderLivingEvent;
@@ -34,35 +37,64 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Cada extremidad desprendida queda tirada en el suelo, unida al muñon por un cable, y el jugador
- * la arrastra: la pieza solo se mueve cuando el cable se tensa (como arrastrar una cuerda).
+ * Extremidades desprendidas con fisica real sobre el terreno (incluyendo cuevas e interiores),
+ * cables/tendones curvos con gravedad y efecto de retraccion al regenerarse.
  */
 @Mod.EventBusSubscriber(modid = RickregenMod.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
 public class DetachedLimbsClient {
 
-    private static final ResourceLocation CABLE_TEXTURE = new ResourceLocation("minecraft", "textures/block/gray_concrete.png");
+    private static final ResourceLocation TENDON_TEXTURE = new ResourceLocation("minecraft", "textures/block/red_nether_bricks.png");
 
     private static final class DragState {
         final boolean[] active = new boolean[6];
         final Vec3[] pos = new Vec3[6];
         final Vec3[] prev = new Vec3[6];
         final float[] yaw = new float[6];
+        final float[] prevYaw = new float[6];
         final float[] roll = new float[6];
         final Vec3[] velocity = new Vec3[6];
     }
 
     private static final Map<UUID, DragState> DRAG = new HashMap<>();
-    private static ModelPart cablePart;
+    private static ModelPart cableSegmentPart;
 
-    private static ModelPart cable() {
-        if (cablePart == null) {
+    private static ModelPart cableSegment() {
+        if (cableSegmentPart == null) {
             MeshDefinition mesh = new MeshDefinition();
+            // Segmento fino de tendon/nervio (0.75 x 16 x 0.75 unidades de modelo)
             mesh.getRoot().addOrReplaceChild("cable",
-                    CubeListBuilder.create().texOffs(0, 0).addBox(-0.5F, 0.0F, -0.5F, 1.0F, 16.0F, 1.0F),
+                    CubeListBuilder.create().texOffs(0, 0).addBox(-0.38F, 0.0F, -0.38F, 0.76F, 16.0F, 0.76F),
                     PartPose.ZERO);
-            cablePart = LayerDefinition.create(mesh, 16, 16).bakeRoot().getChild("cable");
+            cableSegmentPart = LayerDefinition.create(mesh, 16, 16).bakeRoot().getChild("cable");
         }
-        return cablePart;
+        return cableSegmentPart;
+    }
+
+    /**
+     * Calcula la altura exacta del suelo debajo de (x, y, z) sin teletransportar piezas al techo
+     * cuando el jugador esta bajo arboles, cuevas o edificios.
+     */
+    private static double findLocalFloorY(Level level, double x, double refY, double z) {
+        int bx = Mth.floor(x);
+        int bz = Mth.floor(z);
+        int startY = Mth.floor(refY + 0.85);
+        int minY = Math.max(level.getMinBuildHeight(), Mth.floor(refY - 3.5));
+
+        BlockPos.MutableBlockPos mpos = new BlockPos.MutableBlockPos();
+        for (int y = startY; y >= minY; y--) {
+            mpos.set(bx, y, bz);
+            BlockState state = level.getBlockState(mpos);
+            if (!state.isAir() && state.blocksMotion()) {
+                VoxelShape shape = state.getCollisionShape(level, mpos);
+                if (!shape.isEmpty()) {
+                    double top = y + shape.max(net.minecraft.core.Direction.Axis.Y);
+                    if (top <= refY + 1.15) {
+                        return top;
+                    }
+                }
+            }
+        }
+        return refY;
     }
 
     // ---------------------------------------------------------------- simulacion (cada tick del cliente)
@@ -104,70 +136,97 @@ public class DetachedLimbsClient {
             Vec3 anchor = base.add(RickregenHandler.getLimbOffset(player, idx, bodyYaw, crawling));
 
             if (!st.active[idx]) {
-                double lateral = (idx - 3) * 0.25;
-                Vec3 start = new Vec3(
-                        anchor.x + backX * 0.5 + rightX * lateral,
-                        base.y,
-                        anchor.z + backZ * 0.5 + rightZ * lateral);
-                int groundY = player.level().getHeight(Heightmap.Types.MOTION_BLOCKING, BlockPos.containing(start.x, start.y, start.z).getX(), BlockPos.containing(start.x, start.y, start.z).getZ());
-                start = new Vec3(start.x, groundY + 0.10, start.z);
+                // Separacion inicial natural para que las extremidades no se monten unas encima de otras
+                double sideDir = (idx == RickregenHandler.RIGHT_LEG || idx == RickregenHandler.RIGHT_ARM) ? 1.0 : -1.0;
+                if (idx == RickregenHandler.HEAD) sideDir = 0.15;
+                double backDist = (idx <= 2) ? 0.55 : (idx <= 4 ? 0.35 : 0.25);
+
+                double sx = anchor.x + backX * backDist + rightX * sideDir * 0.28;
+                double sz = anchor.z + backZ * backDist + rightZ * sideDir * 0.28;
+                double floorY = findLocalFloorY(player.level(), sx, base.y, sz) + 0.06;
+
+                Vec3 start = new Vec3(sx, floorY, sz);
                 st.pos[idx] = start;
                 st.prev[idx] = start;
-                st.velocity[idx] = Vec3.ZERO;
-                st.yaw[idx] = (float) Math.atan2(-backX, -backZ);
+                st.velocity[idx] = new Vec3(
+                        (backX * 0.04) + (rightX * sideDir * 0.05),
+                        0.08,
+                        (backZ * 0.04) + (rightZ * sideDir * 0.05)
+                );
+                float initialYaw = (float) Math.atan2(-backX, -backZ) + (float) (sideDir * 0.35);
+                st.yaw[idx] = initialYaw;
+                st.prevYaw[idx] = initialYaw;
                 st.roll[idx] = 0.0F;
                 st.active[idx] = true;
             }
 
             st.prev[idx] = st.pos[idx];
+            st.prevYaw[idx] = st.yaw[idx];
             Vec3 p = st.pos[idx];
             Vec3 vel = st.velocity[idx] == null ? Vec3.ZERO : st.velocity[idx];
 
-            // Simulacion ligera tipo ragdoll: gravedad, rozamiento y rebote amortiguado.
-            // En agua las piezas caen mas despacio y pierden velocidad gradualmente.
-            boolean inWater = player.isInWater();
-            double gravity = inWater ? 0.012 : 0.075;
-            vel = vel.add(0.0, -gravity, 0.0).scale(inWater ? 0.88 : 0.94);
+            // Repulsion suave entre extremidades caidas para evitar que se superpongan
+            for (int other = 1; other < idx; other++) {
+                if (st.active[other] && st.pos[other] != null) {
+                    Vec3 diff = p.subtract(st.pos[other]);
+                    double dHoriz = Math.sqrt(diff.x * diff.x + diff.z * diff.z);
+                    if (dHoriz < 0.32 && dHoriz > 0.0001) {
+                        double push = (0.32 - dHoriz) * 0.12;
+                        vel = vel.add((diff.x / dHoriz) * push, 0.0, (diff.z / dHoriz) * push);
+                    }
+                }
+            }
 
-            // El cable actua como una cuerda: solo tira cuando supera su longitud maxima.
+            boolean inWater = player.isInWater();
+            double gravity = inWater ? 0.012 : 0.070;
+            vel = vel.add(0.0, -gravity, 0.0).scale(inWater ? 0.86 : 0.90);
+
+            // Tension de cuerda/tendon
             double dx = anchor.x - p.x;
             double dz = anchor.z - p.z;
             double dist = Math.sqrt(dx * dx + dz * dz);
-            double maxLen = (idx == RickregenHandler.HEAD) ? 0.90 : 1.10;
+            double maxLen = (idx == RickregenHandler.HEAD) ? 0.72 : 0.92;
             if (dist > maxLen) {
                 double nx = dx / Math.max(dist, 0.0001);
                 double nz = dz / Math.max(dist, 0.0001);
-                double tension = Math.min(0.16, (dist - maxLen) * 0.22);
+                double tension = Math.min(0.18, (dist - maxLen) * 0.28);
                 vel = vel.add(nx * tension, 0.0, nz * tension);
             }
 
             Vec3 next = p.add(vel);
-            BlockPos below = BlockPos.containing(next.x, next.y, next.z);
-            int groundY = player.level().getHeight(Heightmap.Types.MOTION_BLOCKING, below.getX(), below.getZ());
-            double floor = groundY + 0.10;
+            double floor = findLocalFloorY(player.level(), next.x, Math.max(p.y, base.y), next.z) + 0.06;
             if (next.y < floor) {
                 next = new Vec3(next.x, floor, next.z);
-                // Rebote pequeño al tocar el suelo y friccion horizontal para evitar deslizamiento infinito.
-                vel = new Vec3(vel.x * 0.72, Math.abs(vel.y) > 0.035 ? -vel.y * 0.16 : 0.0, vel.z * 0.72);
+                vel = new Vec3(vel.x * 0.68, Math.abs(vel.y) > 0.035 ? -vel.y * 0.14 : 0.0, vel.z * 0.68);
             }
 
-            // Limita el desplazamiento horizontal sin teletransportar la pieza al muñon.
+            // Limite elastico maximo
             double ndx = anchor.x - next.x;
             double ndz = anchor.z - next.z;
             double nextDist = Math.sqrt(ndx * ndx + ndz * ndz);
-            if (nextDist > maxLen * 1.65) {
-                double correction = (nextDist - maxLen * 1.65) / Math.max(nextDist, 0.0001);
+            if (nextDist > maxLen * 1.45) {
+                double correction = (nextDist - maxLen * 1.45) / Math.max(nextDist, 0.0001);
                 next = new Vec3(next.x + ndx * correction, next.y, next.z + ndz * correction);
-                vel = new Vec3(vel.x * 0.65, vel.y, vel.z * 0.65);
+                vel = new Vec3(vel.x * 0.60, vel.y, vel.z * 0.60);
             }
 
             st.velocity[idx] = vel;
             st.pos[idx] = next;
-            st.roll[idx] = (float) Math.max(-0.55, Math.min(0.55, vel.z * 1.8));
-            if (Math.abs(vel.x) + Math.abs(vel.z) > 0.015) {
-                st.yaw[idx] = (float) Math.atan2(vel.x, vel.z);
+
+            double speedHoriz = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+            st.roll[idx] = (float) Mth.clamp(speedHoriz * 1.6, -0.35, 0.35);
+            if (speedHoriz > 0.015) {
+                float targetYaw = (float) Math.atan2(vel.x, vel.z);
+                st.yaw[idx] = rotLerpRad(0.25F, st.yaw[idx], targetYaw);
             }
         }
+    }
+
+    private static float rotLerpRad(float delta, float start, float end) {
+        float diff = end - start;
+        while (diff < -(float) Math.PI) diff += (float) (Math.PI * 2.0);
+        while (diff >= (float) Math.PI) diff -= (float) (Math.PI * 2.0);
+        return start + delta * diff;
     }
 
     @SubscribeEvent
@@ -196,7 +255,7 @@ public class DetachedLimbsClient {
         int light = event.getPackedLight();
 
         Vec3 origin = player.getPosition(partial);
-        float bodyYaw = net.minecraft.util.Mth.rotLerp(partial, player.yBodyRotO, player.yBodyRot);
+        float bodyYaw = Mth.rotLerp(partial, player.yBodyRotO, player.yBodyRot);
         boolean crawling = RickregenHandler.isCrawling(player);
 
         for (int idx = 1; idx <= 5; idx++) {
@@ -205,16 +264,46 @@ public class DetachedLimbsClient {
             }
             Vec3 piece = st.prev[idx].lerp(st.pos[idx], partial).subtract(origin);
             Vec3 anchor = RickregenHandler.getLimbOffset(player, idx, bodyYaw, crawling);
+            float interpYaw = rotLerpRad(partial, st.prevYaw[idx], st.yaw[idx]);
 
-            renderCable(ps, buffers, light, anchor, piece.add(0.0, 0.1, 0.0));
-            renderPiece(ps, buffers, light, model, player, idx, piece, st.yaw[idx], st.roll[idx]);
+            renderCatenaryTendon(ps, buffers, light, anchor, piece.add(0.0, 0.07, 0.0));
+            renderPiece(ps, buffers, light, model, player, idx, piece, interpYaw, st.roll[idx]);
         }
     }
 
-    private static void renderCable(PoseStack ps, MultiBufferSource buffers, int light, Vec3 from, Vec3 to) {
+    /**
+     * Dibuja un tendon/cable curvo con caida por gravedad (5 segmentos) entre el muñon y la pieza,
+     * evitando que parezca un palo rigido recto.
+     */
+    private static void renderCatenaryTendon(PoseStack ps, MultiBufferSource buffers, int light, Vec3 from, Vec3 to) {
+        double totalDist = to.distanceTo(from);
+        if (totalDist < 0.03) {
+            return;
+        }
+        int segments = 5;
+        // Cuanto mas cerca esta la pieza, mas cuelga el cable; al tensarse se estira
+        double slack = Math.max(0.02, 0.16 * (1.0 - Math.min(1.0, totalDist / 1.15)));
+
+        VertexConsumer vc = buffers.getBuffer(RenderType.entityCutoutNoCull(TENDON_TEXTURE));
+        Vec3 prevPt = from;
+
+        for (int i = 1; i <= segments; i++) {
+            float t = (float) i / segments;
+            double sag = Math.sin(t * Math.PI) * slack;
+            Vec3 currPt = new Vec3(
+                    Mth.lerp(t, from.x, to.x),
+                    Math.max(0.03, Mth.lerp(t, from.y, to.y) - sag),
+                    Mth.lerp(t, from.z, to.z)
+            );
+            renderCableSegment(ps, vc, light, prevPt, currPt);
+            prevPt = currPt;
+        }
+    }
+
+    private static void renderCableSegment(PoseStack ps, VertexConsumer vc, int light, Vec3 from, Vec3 to) {
         Vec3 d = to.subtract(from);
         double len = d.length();
-        if (len < 0.02) {
+        if (len < 0.005) {
             return;
         }
         ps.pushPose();
@@ -222,9 +311,8 @@ public class DetachedLimbsClient {
         Vector3f dir = new Vector3f((float) (d.x / len), (float) (d.y / len), (float) (d.z / len));
         Quaternionf rot = new Quaternionf().rotationTo(new Vector3f(0.0F, 1.0F, 0.0F), dir);
         ps.mulPose(rot);
-        ps.scale(0.5F, (float) len, 0.5F);
-        VertexConsumer vc = buffers.getBuffer(RenderType.entityCutoutNoCull(CABLE_TEXTURE));
-        cable().render(ps, vc, light, OverlayTexture.NO_OVERLAY);
+        ps.scale(0.55F, (float) len, 0.55F);
+        cableSegment().render(ps, vc, light, OverlayTexture.NO_OVERLAY);
         ps.popPose();
     }
 
@@ -268,7 +356,7 @@ public class DetachedLimbsClient {
         preparePose(overlay);
 
         ps.pushPose();
-        ps.translate(pos.x, pos.y + (idx == RickregenHandler.HEAD ? 0.26 : 0.13), pos.z);
+        ps.translate(pos.x, pos.y + (idx == RickregenHandler.HEAD ? 0.24 : 0.11), pos.z);
         ps.mulPose(Axis.YP.rotation(yawRad));
         ps.mulPose(Axis.XP.rotationDegrees(idx == RickregenHandler.HEAD ? -90.0F : 90.0F));
         ps.mulPose(Axis.ZP.rotation(roll));
