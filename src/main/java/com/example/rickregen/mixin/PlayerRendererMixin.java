@@ -14,22 +14,17 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(PlayerRenderer.class)
+@Mixin(value = PlayerRenderer.class, priority = 1500)
 public abstract class PlayerRendererMixin {
 
     @Inject(method = "setModelProperties", at = @At("TAIL"))
     private void rickregen$updateLimbVisibilityAndGrowth(AbstractClientPlayer player, CallbackInfo ci) {
+        if (player == null) return;
         PlayerRenderer renderer = (PlayerRenderer) (Object) this;
         PlayerModel<AbstractClientPlayer> model = renderer.getModel();
 
         int stage = RickregenHandler.getDismembermentStage(player);
         boolean regenerating = RickregenHandler.isRegenerating(player);
-
-        rickregen$resetPartScale(model.head, model.hat);
-        rickregen$resetPartScale(model.leftArm, model.leftSleeve);
-        rickregen$resetPartScale(model.rightArm, model.rightSleeve);
-        rickregen$resetPartScale(model.leftLeg, model.leftPants);
-        rickregen$resetPartScale(model.rightLeg, model.rightPants);
 
         if (regenerating) {
             float partial = Minecraft.getInstance().getPartialTick();
@@ -63,16 +58,6 @@ public abstract class PlayerRendererMixin {
     }
 
     @Unique
-    private void rickregen$resetPartScale(ModelPart base, ModelPart overlay) {
-        base.xScale = 1.0F;
-        base.yScale = 1.0F;
-        base.zScale = 1.0F;
-        overlay.xScale = 1.0F;
-        overlay.yScale = 1.0F;
-        overlay.zScale = 1.0F;
-    }
-
-    @Unique
     private void rickregen$applyGrowth(ModelPart base, ModelPart overlay, float scale) {
         if (scale <= 0.02F) {
             base.visible = false;
@@ -91,14 +76,14 @@ public abstract class PlayerRendererMixin {
 
     @Inject(method = "renderRightHand", at = @At("HEAD"), cancellable = true)
     private void rickregen$hideFirstPersonRightHand(PoseStack poseStack, MultiBufferSource buffer, int combinedLight, AbstractClientPlayer player, CallbackInfo ci) {
-        if (RickregenHandler.isLimbMissing(player, RickregenHandler.RIGHT_ARM, Minecraft.getInstance().getPartialTick())) {
+        if (player != null && RickregenHandler.isLimbMissing(player, RickregenHandler.RIGHT_ARM, Minecraft.getInstance().getPartialTick())) {
             ci.cancel();
         }
     }
 
     @Inject(method = "renderLeftHand", at = @At("HEAD"), cancellable = true)
     private void rickregen$hideFirstPersonLeftHand(PoseStack poseStack, MultiBufferSource buffer, int combinedLight, AbstractClientPlayer player, CallbackInfo ci) {
-        if (RickregenHandler.isLimbMissing(player, RickregenHandler.LEFT_ARM, Minecraft.getInstance().getPartialTick())) {
+        if (player != null && RickregenHandler.isLimbMissing(player, RickregenHandler.LEFT_ARM, Minecraft.getInstance().getPartialTick())) {
             ci.cancel();
         }
     }
