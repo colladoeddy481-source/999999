@@ -166,25 +166,24 @@ public class RickregenHandler {
     }
 
     /**
-     * Posicion exacta del muñon adaptada perfectamente a la postura SWIMMING nativa de Minecraft 1.20.1.
+     * Posición exacta del muñón alineada a ras del suelo para la postura de arrastre horizontal.
      */
     public static Vec3 getLimbOffset(Player player, int limbIndex, float bodyYawDeg, boolean crawling) {
         double yaw = Math.toRadians(bodyYawDeg);
-        double fx = -Math.sin(yaw), fz = Math.cos(yaw);   // Adelante
-        double rx = -Math.cos(yaw), rz = -Math.sin(yaw);  // Derecha
+        double fx = -Math.sin(yaw), fz = Math.cos(yaw);
+        double rx = -Math.cos(yaw), rz = -Math.sin(yaw);
 
         if (crawling) {
-            // En postura SWIMMING nativa, el cuerpo esta horizontal a lo largo del eje longitudinal del jugador
+            // Anclajes precisos en la base del cuerpo tumbado (altura Y baja para tocar el suelo)
             switch (limbIndex) {
-                case RIGHT_LEG -> { return new Vec3(rx * 0.22 + fx * (-0.75), 0.15, rz * 0.22 + fz * (-0.75)); }
-                case LEFT_LEG  -> { return new Vec3(rx * (-0.22) + fx * (-0.75), 0.15, rz * (-0.22) + fz * (-0.75)); }
-                case RIGHT_ARM -> { return new Vec3(rx * 0.32 + fx * (-0.15), 0.20, rz * 0.32 + fz * (-0.15)); }
-                case LEFT_ARM  -> { return new Vec3(rx * (-0.32) + fx * (-0.15), 0.20, rz * (-0.32) + fz * (-0.15)); }
-                default        -> { return new Vec3(fx * 0.55, 0.25, fz * 0.55); } // HEAD
+                case RIGHT_LEG -> { return new Vec3(rx * 0.20 + fx * (-0.60), 0.08, rz * 0.20 + fz * (-0.60)); }
+                case LEFT_LEG  -> { return new Vec3(rx * (-0.20) + fx * (-0.60), 0.08, rz * (-0.20) + fz * (-0.60)); }
+                case RIGHT_ARM -> { return new Vec3(rx * 0.28 + fx * (-0.10), 0.10, rz * 0.28 + fz * (-0.10)); }
+                case LEFT_ARM  -> { return new Vec3(rx * (-0.28) + fx * (-0.10), 0.10, rz * (-0.28) + fz * (-0.10)); }
+                default        -> { return new Vec3(fx * 0.40, 0.12, fz * 0.40); } // HEAD
             }
         }
 
-        // De pie
         double side = (limbIndex == RIGHT_LEG || limbIndex == RIGHT_ARM) ? 1.0 : -1.0;
         if (limbIndex == HEAD) {
             return new Vec3(0.0, 1.44, 0.0);
@@ -245,7 +244,7 @@ public class RickregenHandler {
                 }
 
                 if (currentTick == 20 || currentTick == 40 || currentTick == 60 || currentTick == 80 || currentTick == 100) {
-                    double yOffset = isCrawling(player) ? 0.25 : ((currentTick == 20) ? 1.5 : 1.0);
+                    double yOffset = isCrawling(player) ? 0.2 : ((currentTick == 20) ? 1.5 : 1.0);
                     serverLevel.sendParticles(
                             ParticleTypes.COMPOSTER,
                             player.getX(), player.getY() + yOffset, player.getZ(),
