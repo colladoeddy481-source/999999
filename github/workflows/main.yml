@@ -1,4 +1,4 @@
-name: Compilar mod
+name: Build Rickregen Mod
 
 on:
   push:
@@ -7,6 +7,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -19,20 +20,15 @@ jobs:
         with:
           gradle-version: 8.8
 
-      - name: Compilar Forge
-        continue-on-error: true
-        run: gradle :forge:build
-
-      - name: Compilar Fabric
-        continue-on-error: true
-        run: gradle :fabric:build
+      - name: Compilar Forge y Fabric
+        run: gradle build
 
       - name: Subir los jars
         uses: actions/upload-artifact@v4
         with:
           name: jars
-          path:|
-  forge/build/libs/*.jar
-  fabric/build/libs/*.jar
-  build/libs/*.jar
-        
+          path: |
+            forge/build/libs/*.jar
+            fabric/build/libs/*.jar
+            build/libs/*.jar
+          if-no-files-found: warn
