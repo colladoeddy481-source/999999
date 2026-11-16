@@ -23,13 +23,11 @@ public class RickregenHandler {
     private static final Map<UUID, Long> LAST_SAVE = new ConcurrentHashMap<>();
     private static final Map<UUID, Integer> LAST_STAGE = new ConcurrentHashMap<>();
 
-    // Sangre: polvo rojo oscuro
     private static final DustParticleOptions BLOOD = new DustParticleOptions(new Vector3f(0.55F, 0.02F, 0.02F), 1.1F);
 
     public static final int TOTAL_REGEN_TICKS = 100;
     public static final long SAVE_COOLDOWN_TICKS = 600L;
 
-    // Indices de extremidad: 1 pierna derecha, 2 pierna izquierda, 3 brazo derecho, 4 brazo izquierdo, 5 cabeza
     public static final int RIGHT_LEG = 1, LEFT_LEG = 2, RIGHT_ARM = 3, LEFT_ARM = 4, HEAD = 5;
 
     private static Map<UUID, Integer> ticksMap(Player player) {
@@ -54,7 +52,6 @@ public class RickregenHandler {
         }
     }
 
-    /** Golpe mortal: si puede, cancela la muerte, deja 1 de vida y arranca la regeneracion. */
     public static boolean tryCheatDeath(ServerPlayer player) {
         if (player.isCreative() || player.isSpectator()) {
             return false;
@@ -80,10 +77,6 @@ public class RickregenHandler {
         return true;
     }
 
-    /**
-     * Etapa de extremidades perdidas (0 a 5):
-     * 6 corazones: pierna derecha | 5: pierna izquierda | 4: brazo derecho | 3: brazo izquierdo | 2: cabeza.
-     */
     public static int getDismembermentStage(Player player) {
         if (player.isCreative() || player.isSpectator()) {
             return 0;
@@ -149,7 +142,6 @@ public class RickregenHandler {
         return easeOutCubic((ticks - startTick) / (float) duration);
     }
 
-    /** true si esa extremidad esta ahora mismo desprendida (antes de empezar a rebrotar). */
     public static boolean isLimbMissing(Player player, int limbIndex, float partialTick) {
         if (player.isCreative() || player.isSpectator()) {
             return false;
@@ -160,7 +152,6 @@ public class RickregenHandler {
         return getDismembermentStage(player) >= limbIndex;
     }
 
-    /** Sin ambas piernas el jugador se arrastra (pose de gateo). */
     public static boolean isCrawling(Player player) {
         return getDismembermentStage(player) >= 2;
     }
@@ -175,65 +166,31 @@ public class RickregenHandler {
     }
 
     /**
-     * Posicion exacta del "muñon" de una extremidad respecto a los pies del jugador, en coordenadas del mundo.
-     * Calibrado para la postura SWIMMING (gateo) y postura de pie de Minecraft.
+     * Posicion exacta del muñon adaptada perfectamente a la postura SWIMMING nativa de Minecraft 1.20.1.
      */
     public static Vec3 getLimbOffset(Player player, int limbIndex, float bodyYawDeg, boolean crawling) {
         double yaw = Math.toRadians(bodyYawDeg);
-        double fx = -Math.sin(yaw), fz = Math.cos(yaw);   // vector hacia adelante
-        double rx = -Math.cos(yaw), rz = -Math.sin(yaw);  // vector hacia la derecha del jugador
-
-        double side;
-        double sideDist;
-        double upright;
-        double crawlForward;
-        double crawlHeight;
-
-        switch (limbIndex) {
-            case RIGHT_LEG -> {
-                side = 1.0;
-                sideDist = 0.12;
-                upright = 0.72;
-                crawlForward = -0.38;
-                crawlHeight = 0.18;
-            }
-            case LEFT_LEG -> {
-                side = -1.0;
-                sideDist = 0.12;
-                upright = 0.72;
-                crawlForward = -0.38;
-                crawlHeight = 0.18;
-            }
-            case RIGHT_ARM -> {
-                side = 1.0;
-                sideDist = 0.34;
-                upright = 1.32;
-                crawlForward = 0.25;
-                crawlHeight = 0.24;
-            }
-            case LEFT_ARM -> {
-                side = -1.0;
-                sideDist = 0.34;
-                upright = 1.32;
-                crawlForward = 0.25;
-                crawlHeight = 0.24;
-            }
-            default -> { // HEAD
-                side = 0.0;
-                sideDist = 0.0;
-                upright = 1.44;
-                crawlForward = 0.42;
-                crawlHeight = 0.28;
-            }
-        }
+        double fx = -Math.sin(yaw), fz = Math.cos(yaw);   // Adelante
+        double rx = -Math.cos(yaw), rz = -Math.sin(yaw);  // Derecha
 
         if (crawling) {
-            return new Vec3(
-                    fx * crawlForward + rx * side * sideDist,
-                    crawlHeight,
-                    fz * crawlForward + rz * side * sideDist
-            );
+            // En postura SWIMMING nativa, el cuerpo esta horizontal a lo largo del eje longitudinal del jugador
+            switch (limbIndex) {
+                case RIGHT_LEG -> { return new Vec3(rx * 0.22 + fx * (-0.75), 0.15, rz * 0.22 + fz * (-0.75)); }
+                case LEFT_LEG  -> { return new Vec3(rx * (-0.22) + fx * (-0.75), 0.15, rz * (-0.22) + fz * (-0.75)); }
+                case RIGHT_ARM -> { return new Vec3(rx * 0.32 + fx * (-0.15), 0.20, rz * 0.32 + fz * (-0.15)); }
+                case LEFT_ARM  -> { return new Vec3(rx * (-0.32) + fx * (-0.15), 0.20, rz * (-0.32) + fz * (-0.15)); }
+                default        -> { return new Vec3(fx * 0.55, 0.25, fz * 0.55); } // HEAD
+            }
         }
+
+        // De pie
+        double side = (limbIndex == RIGHT_LEG || limbIndex == RIGHT_ARM) ? 1.0 : -1.0;
+        if (limbIndex == HEAD) {
+            return new Vec3(0.0, 1.44, 0.0);
+        }
+        double sideDist = (limbIndex <= 2) ? 0.12 : 0.34;
+        double upright = (limbIndex <= 2) ? 0.72 : 1.32;
         return new Vec3(rx * side * sideDist, upright, rz * side * sideDist);
     }
 
@@ -247,7 +204,6 @@ public class RickregenHandler {
         UUID uuid = player.getUUID();
         float health = player.getHealth();
 
-        // Iniciar la regeneracion al llegar a 1 corazon o menos
         if (!map.containsKey(uuid) && health <= 2.0F && health > 0.0F) {
             map.put(uuid, 0);
 
@@ -283,13 +239,13 @@ public class RickregenHandler {
                 if (currentTick % 4 == 0) {
                     serverLevel.sendParticles(
                             ParticleTypes.HAPPY_VILLAGER,
-                            player.getX(), player.getY() + 0.6, player.getZ(),
+                            player.getX(), player.getY() + 0.5, player.getZ(),
                             5, 0.35, 0.45, 0.35, 0.02
                     );
                 }
 
                 if (currentTick == 20 || currentTick == 40 || currentTick == 60 || currentTick == 80 || currentTick == 100) {
-                    double yOffset = isCrawling(player) ? 0.35 : ((currentTick == 20) ? 1.5 : 1.0);
+                    double yOffset = isCrawling(player) ? 0.25 : ((currentTick == 20) ? 1.5 : 1.0);
                     serverLevel.sendParticles(
                             ParticleTypes.COMPOSTER,
                             player.getX(), player.getY() + yOffset, player.getZ(),
