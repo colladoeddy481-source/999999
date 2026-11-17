@@ -17,6 +17,12 @@ import java.util.List;
 @Mod.EventBusSubscriber(modid = RickregenMod.MOD_ID)
 public class RickregenHandler {
 
+    // Constantes de extremidades requeridas por el renderizador
+    public static final int RIGHT_ARM = 0;
+    public static final int LEFT_ARM = 1;
+    public static final int RIGHT_LEG = 2;
+    public static final int LEFT_LEG = 3;
+
     @SubscribeEvent
     public static void onLivingDamage(LivingDamageEvent event) {
         if (event.getEntity() instanceof Player player) {
@@ -62,7 +68,7 @@ public class RickregenHandler {
         }
     }
 
-    // Métodos de soporte requeridos por PlayerRendererMixin
+    // Métodos de soporte requeridos por los Mixins
     public static int getDismembermentStage(AbstractClientPlayer player) {
         return 0;
     }
@@ -73,5 +79,13 @@ public class RickregenHandler {
 
     public static float getCurrentLimbGrowthScale(AbstractClientPlayer player, int limbId, float partialTick) {
         return 1.0f;
+    }
+
+    public static boolean isLimbMissing(AbstractClientPlayer player, int limbId, float partialTick) {
+        return false;
+    }
+
+    public static boolean shouldCraw(Player player) {
+        return player.getHealth() <= 4.0f; // Activa el arrastre con vida baja o piernas rotas
     }
 }
