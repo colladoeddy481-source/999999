@@ -8,6 +8,7 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
@@ -153,6 +154,9 @@ public class RickregenHandler {
     }
 
     public static boolean isCrawling(Player player) {
+        if (player.getPose() == Pose.SWIMMING || player.isVisuallySwimming()) {
+            return true;
+        }
         return getDismembermentStage(player) >= 2;
     }
 
@@ -166,21 +170,23 @@ public class RickregenHandler {
     }
 
     /**
-     * Posicion exacta del muñon adaptada perfectamente a la postura SWIMMING nativa de Minecraft 1.20.1.
+     * Posicion exacta del muñon adaptada perfectamente a la postura SWIMMING,
+     * evitando desincronizaciones cliente/servidor que disparen cables hacia el cielo.
      */
     public static Vec3 getLimbOffset(Player player, int limbIndex, float bodyYawDeg, boolean crawling) {
         double yaw = Math.toRadians(bodyYawDeg);
         double fx = -Math.sin(yaw), fz = Math.cos(yaw);   // Adelante
         double rx = -Math.cos(yaw), rz = -Math.sin(yaw);  // Derecha
 
-        if (crawling) {
-            // En postura SWIMMING nativa, el cuerpo esta horizontal a lo largo del eje longitudinal del jugador
+        boolean forceCrawl = crawling || player.getPose() == Pose.SWIMMING || player.isVisuallySwimming();
+
+        if (forceCrawl) {
             switch (limbIndex) {
-                case RIGHT_LEG -> { return new Vec3(rx * 0.22 + fx * (-0.75), 0.15, rz * 0.22 + fz * (-0.75)); }
-                case LEFT_LEG  -> { return new Vec3(rx * (-0.22) + fx * (-0.75), 0.15, rz * (-0.22) + fz * (-0.75)); }
-                case RIGHT_ARM -> { return new Vec3(rx * 0.32 + fx * (-0.15), 0.20, rz * 0.32 + fz * (-0.15)); }
-                case LEFT_ARM  -> { return new Vec3(rx * (-0.32) + fx * (-0.15), 0.20, rz * (-0.32) + fz * (-0.15)); }
-                default        -> { return new Vec3(fx * 0.55, 0.25, fz * 0.55); } // HEAD
+                case RIGHT_LEG -> { return new Vec3(rx * 0.20 + fx * (-0.65), 0.12, rz * 0.20 + fz * (-0.65)); }
+                case LEFT_LEG  -> { return new Vec3(rx * (-0.20) + fx * (-0.65), 0.12, rz * (-0.20) + fz * (-0.65)); }
+                case RIGHT_ARM -> { return new Vec3(rx * 0.28 + fx * (-0.15), 0.15, rz * 0.28 + fz * (-0.15)); }
+                case LEFT_ARM  -> { return new Vec3(rx * (-0.28) + fx * (-0.15), 0.15, rz * (-0.28) + fz * (-0.15)); }
+                default        -> { return new Vec3(fx * 0.45, 0.18, fz * 0.45); } // HEAD
             }
         }
 
@@ -245,7 +251,7 @@ public class RickregenHandler {
                 }
 
                 if (currentTick == 20 || currentTick == 40 || currentTick == 60 || currentTick == 80 || currentTick == 100) {
-                    double yOffset = isCrawling(player) ? 0.25 : ((currentTick == 20) ? 1.5 : 1.0);
+                    double yOffset = isCrawling(player) ? 0.2 : ((currentTick == 20) ? 1.5 : 1.0);
                     serverLevel.sendParticles(
                             ParticleTypes.COMPOSTER,
                             player.getX(), player.getY() + yOffset, player.getZ(),
