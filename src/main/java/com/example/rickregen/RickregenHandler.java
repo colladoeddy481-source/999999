@@ -61,3 +61,15 @@ public class RickregenHandler {
         }
     }
 }
+// Métodos de soporte requeridos por el renderizador del cliente
+    public static int getDismembermentStage(net.minecraft.client.player.AbstractClientPlayer player) {
+        return 0; // 0 por defecto (sin desprendimiento activo)
+    }
+
+    public static boolean isRegenerating(net.minecraft.client.player.AbstractClientPlayer player) {
+        return false; // Falso por defecto
+    }
+
+    public static float getCurrentLimbGrowthScale(net.minecraft.client.player.AbstractClientPlayer player, int limbId, float partialTick) {
+        return 1.0f; // Escala completa por defecto
+    }
