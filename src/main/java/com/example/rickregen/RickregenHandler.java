@@ -2,6 +2,7 @@ package com.example.rickregen;
 
 import com.example.rickregen.ability.AbilityCooldownManager;
 import com.example.rickregen.ability.AbilityCooldownManager.Ability;
+import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.animal.IronGolem;
 import net.minecraft.world.entity.player.Player;
@@ -60,16 +61,17 @@ public class RickregenHandler {
             }
         }
     }
+
+    // Métodos de soporte requeridos por PlayerRendererMixin
+    public static int getDismembermentStage(AbstractClientPlayer player) {
+        return 0;
+    }
+
+    public static boolean isRegenerating(AbstractClientPlayer player) {
+        return false;
+    }
+
+    public static float getCurrentLimbGrowthScale(AbstractClientPlayer player, int limbId, float partialTick) {
+        return 1.0f;
+    }
 }
-// Métodos de soporte requeridos por el renderizador del cliente
-    public static int getDismembermentStage(net.minecraft.client.player.AbstractClientPlayer player) {
-        return 0; // 0 por defecto (sin desprendimiento activo)
-    }
-
-    public static boolean isRegenerating(net.minecraft.client.player.AbstractClientPlayer player) {
-        return false; // Falso por defecto
-    }
-
-    public static float getCurrentLimbGrowthScale(net.minecraft.client.player.AbstractClientPlayer player, int limbId, float partialTick) {
-        return 1.0f; // Escala completa por defecto
-    }
