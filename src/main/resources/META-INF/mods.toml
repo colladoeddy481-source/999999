@@ -4,12 +4,12 @@ license="All Rights Reserved"
 
 [[mods]]
 modId="rickregen"
-version="2.7.0"
+version="2.0.0"
 displayName="Rickregen"
 displayURL="https://github.com/colledoeddy481-source"
 authors="eddy14126"
 description='''
-Mod de regeneración y animaciones personalizadas para Minecraft 1.20.1.
+Mod de habilidades de combate, regeneracion cubica y animaciones estilo Rick Prime para Minecraft 1.20.1.
 '''
 
 [[dependencies.rickregen]]
